@@ -87,6 +87,6 @@ if __name__ == '__main__':
     ]
     run(
         input_file_pattern='gs://usina-energia-dados/usina-energia/*.csv',
-        output_table='usina-energia:usina_dados_batch.manutencao',
+        output_table='usina-energia:raw.manutencao',
         pipeline_args=pipeline_args
     )
