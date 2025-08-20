@@ -1,0 +1,5 @@
+dataformCoreVersion: 3.0.27
+defaultProject: usina-energia
+defaultLocation: us-central1
+defaultDataset: dataform
+defaultAssertionDataset: dataform_assertions
