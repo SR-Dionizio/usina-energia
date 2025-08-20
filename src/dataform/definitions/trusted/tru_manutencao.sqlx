@@ -1,0 +1,26 @@
+-- dataproc_scripts/trusted/tru_manutencao.sqlx
+-- script para tratar os dados na camada trusted de manutenção
+config {
+  type: "incremental",
+  name: "tru_manutencao",
+  schema: "trusted",
+  tags: ["trusted", "manutencao", "eventos"],
+  description: "Dados de manutenção limpos, vindos da camada raw"
+}
+
+select
+  SAFE_CAST(maintenance_id as string)     as id_manutencao,
+  SAFE_CAST(equipment_id as string)       as equipamento,
+  SAFE_CAST(maintenance_type as string)   as tipo_manutencao,
+  SAFE_CAST(description as string)        as descricao_evento,
+  SAFE_CAST(start_date as timestamp)      as data_inicio,
+  SAFE_CAST(end_date as timestamp)        as data_fim,
+  SAFE_CAST(downtime_hours as float64)    as horas_paradas,
+  SAFE_CAST(technician as string)         as tecnico,
+  SAFE_CAST(_source_file as string)       as arquivo_fonte,
+  SAFE_CAST(_source_storage as string)    as local_fonte,
+  SAFE_CAST(_datetime_insert as timestamp) as hora_registro_etl
+from
+  ${ref("raw", "manutencao")}
+where 1=1
+    ${when(incremental(), `AND _datetime_insert > (SELECT MAX(hora_registro_etl) FROM ${self()})`)}
