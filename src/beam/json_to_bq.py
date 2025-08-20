@@ -81,8 +81,8 @@ if __name__ == '__main__':
         'fields': [
             {'name': 'sensor_id', 'type': 'STRING', 'mode': 'NULLABLE'},
             {'name': 'equipment_id', 'type': 'STRING', 'mode': 'NULLABLE'},
-            {'name': 'timestamp', 'type': 'TIMESTAMP', 'mode': 'NULLABLE'},
-            {'name': 'value', 'type': 'FLOAT', 'mode': 'NULLABLE'},
+            {'name': 'timestamp', 'type': 'STRING', 'mode': 'NULLABLE'},
+            {'name': 'value', 'type': 'STRING', 'mode': 'NULLABLE'},
             {'name': 'unit', 'type': 'STRING', 'mode': 'NULLABLE'},
             {'name': '_datetime_insert', 'type': 'TIMESTAMP', 'mode': 'NULLABLE'},
         ]
