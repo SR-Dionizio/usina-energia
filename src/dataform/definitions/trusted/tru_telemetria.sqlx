@@ -1,4 +1,3 @@
--- dataproc_scripts/trusted/telemetria.sqlx
 -- Script para tratar os dados na camada trusted
 config {
   type: "incremental",
