@@ -1,0 +1,8 @@
+-- definitions/raw/telemetria.sqlx
+config {
+  type: "table",
+  name: "telemetria",
+  schema: "raw",
+  tags: ["raw", "telemetria"],
+  description: "Tabela de telemetria bruta vinda do Dataflow"
+}
