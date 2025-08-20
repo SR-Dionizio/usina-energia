@@ -1,0 +1,8 @@
+-- definitions/raw/telemetria.sqlx
+config {
+  type: "table",
+  name: "manutencao",
+  schema: "raw",
+  tags: ["raw", "manutencao"],
+  description: "Tabela de manutencao bruta vinda do Dataflow"
+}
