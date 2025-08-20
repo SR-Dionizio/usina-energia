@@ -1,0 +1,26 @@
+-- dataproc_scripts/trusted/telemetria.sqlx
+-- Script para tratar os dados na camada trusted
+config {
+  type: "incremental",
+  name: "tru_telemetria",
+  schema: "trusted",
+  tags: ["trusted", "telemetria", "sensores"],
+  description: "Dados vindos da camada raw, contendo dados de sensores da usina"
+}
+
+select
+    SAFE_CAST(sensor_id AS STRING)          AS sensor,
+    SAFE_CAST(equipment_id AS STRING)       AS equipamento,
+    SAFE_CAST(timestamp AS TIMESTAMP)       AS hora_registro_sensor,
+    SAFE_CAST(value AS FLOAT64)             AS valor,
+    SAFE_CAST(unit AS STRING)               AS unidade_medida,
+    case
+        when value is null or unit in ("N/A", "") then true
+        else false
+    end AS valor_invalido,
+    SAFE_CAST(_datetime_insert AS TIMESTAMP) AS hora_registro_etl
+from
+  ${ref("raw", "telemetria")}
+where 1=1
+    ${when(incremental(), `AND _datetime_insert > (SELECT MAX(hora_registro_etl) FROM ${self()})`)}
+
