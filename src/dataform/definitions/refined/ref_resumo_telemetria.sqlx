@@ -1,0 +1,65 @@
+config {
+  type: "table",
+  name: "ref_resumo_telemetria",
+  schema: "refined",
+  tags: ["refined", "telemetria", "agregacao", "enriquecimento"],
+  description: "Telemetria enriquecida com última manutenção do equipamento"
+}
+
+-- telemetria agregada
+with telemetria_diaria as (
+  select
+    date(hora_registro_sensor) as data_leitura,
+    safe_cast(equipamento as string) as equipamento,
+    safe_cast(sensor as string) as sensor,
+    avg(safe_cast(valor as float64)) as media_valor,
+    min(safe_cast(valor as float64)) as min_valor,
+    max(safe_cast(valor as float64)) as max_valor,
+    count(safe_cast(valor as float64)) as contagem_leituras
+  from
+    ${ref("trusted", "tru_telemetria")}
+  where
+    hora_registro_sensor is not null
+  group by
+    data_leitura, equipamento, sensor
+),
+
+-- manutenção com janela para achar a última antes da telemetria
+manutencao_ranked as (
+  select
+    id_manutencao,
+    safe_cast(equipamento as string) as equipamento,
+    safe_cast(tipo_manutencao as string) as tipo_manutencao,
+    date(data_inicio) as data_inicio,
+    row_number() over (
+      partition by equipamento
+      order by data_inicio desc
+    ) as rn
+  from
+    ${ref("trusted", "tru_manutencao")}
+)
+
+-- join principal
+select
+  t.data_leitura,
+  t.equipamento,
+  t.sensor,
+  t.media_valor,
+  t.min_valor,
+  t.max_valor,
+  t.contagem_leituras,
+  m.id_manutencao as ultima_manutencao_id,
+  m.tipo_manutencao as ultima_manutencao_tipo,
+  case when m.id_manutencao is not null then true else false end as teve_manutencao
+from
+  telemetria_diaria t
+left join (
+    select
+      equipamento,
+      id_manutencao,
+      tipo_manutencao,
+      data_inicio
+    from manutencao_ranked
+) m
+on t.equipamento = m.equipamento
+and date(m.data_inicio) <= t.data_leitura
