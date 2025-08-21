@@ -1,75 +1,75 @@
 import logging
+import re
 import json
 from datetime import datetime, timezone
 
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
-from apache_beam.io.gcp.pubsub import ReadFromPubSub
-from apache_beam.io import ReadAllFromText
+from apache_beam.io.fileio import MatchFiles, ReadMatches
 
 
-class ProcessGCSNotification(beam.DoFn):
+class ProcessAndAddMetadataJSON(beam.DoFn):
     """
-    Extrai o caminho do arquivo GCS da notificação do Pub/Sub.
+    DoFn que lê o conteúdo de um arquivo JSON ou JSONL,
+    transforma em dict(s) e adiciona colunas de metadados.
     """
 
-    def process(self, element):
+    def process(self, element, *args, **kwargs):
+        file_obj = element
+        file_path = file_obj.metadata.path
+
+        # Extrai metadados do caminho do arquivo
+        bucket_match = re.search(r'gs://([^/]+)/', file_path)
+        source_bucket = bucket_match.group(1) if bucket_match else 'unknown_bucket'
+        source_file = file_path.split('/')[-1]
+
+        content = file_obj.read().decode('utf-8').strip()
+        if not content:
+            return
+
+        records = []
         try:
-            data = json.loads(element.decode('utf-8'))
-            bucket = data['bucket']
-            file_name = data['name']
+            # Tenta primeiro como JSON "normal"
+            data = json.loads(content)
+            if isinstance(data, dict):
+                records = [data]
+            elif isinstance(data, list):
+                records = data
+        except json.JSONDecodeError:
+            # Se falhar, tenta JSONL (uma linha por objeto)
+            try:
+                records = [json.loads(line) for line in content.splitlines() if line.strip()]
+            except json.JSONDecodeError:
+                logging.error(f"Arquivo {source_file} inválido: não é JSON nem JSONL")
+                return
 
-            yield f'gs://{bucket}/{file_name}'
-        except (json.JSONDecodeError, KeyError) as e:
-            logging.error(f'Falha ao processar a notificação do GCS. Erro: {e}')
-            pass
+        # Adiciona metadados
+        for row in records:
+            if isinstance(row, dict):
+                row["_source_file"] = source_file
+                row["_source_storage"] = source_bucket
+                row["_datetime_insert"] = datetime.now(timezone.utc).isoformat()
+                yield row
 
 
-def process_file_content(line):
+def run(input_file_pattern, output_table, table_schema, pipeline_args):
     """
-    Lê o conteúdo de um arquivo e processa cada linha como um registro JSON.
+    Cria e executa o pipeline Apache Beam para ingestão de JSON.
     """
-    try:
-        record = json.loads(line)
-        record['_datetime_insert'] = datetime.now(timezone.utc).isoformat()
-        yield record
-    except json.JSONDecodeError as e:
-        logging.error(f'Falha ao parsear a linha JSON: {line}. Erro: {e}')
-        # Em produção: enviar para Dead-Letter Queue
-        pass
-
-
-def run_streaming_pipeline(input_topic, output_table, table_schema, pipeline_args=None):
-    """
-    Cria e executa o pipeline Apache Beam para ingestão de streaming.
-    """
-    if pipeline_args is None:
-        pipeline_args = []
-
-    # ✅ Define que o pipeline é de streaming
-    pipeline_options = PipelineOptions(pipeline_args, streaming=True)
+    pipeline_options = PipelineOptions(pipeline_args)
 
     with beam.Pipeline(options=pipeline_options) as p:
-        # 1. Lê a notificação do Pub/Sub
-        notifications = p | 'Read from PubSub' >> ReadFromPubSub(topic=input_topic)
+        # Lendo todos os arquivos e processando
+        records = (p
+                   | 'Match Files' >> MatchFiles(input_file_pattern)
+                   | 'Read Matches' >> ReadMatches()
+                   | 'Process JSON and Add Metadata' >> beam.ParDo(ProcessAndAddMetadataJSON()))
 
-        # 2. Extrai o caminho do arquivo da notificação
-        file_paths = notifications | 'Get File Path' >> beam.ParDo(ProcessGCSNotification())
-
-        # 3. Lê o conteúdo dos arquivos do GCS
-        lines = (
-            file_paths
-            | 'Read GCS File Contents' >> ReadAllFromText()
-        )
-
-        # 4. Processa cada linha JSON
-        records = lines | 'Process File Content' >> beam.FlatMap(process_file_content)
-
-        # 5. Grava no BigQuery
+        # Carregando no BigQuery
         records | 'Write to BigQuery' >> beam.io.WriteToBigQuery(
             output_table,
             schema=table_schema,
-            write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+            write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
             create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
         )
 
@@ -77,30 +77,28 @@ def run_streaming_pipeline(input_topic, output_table, table_schema, pipeline_arg
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
 
-    telemetry_schema = {
-        'fields': [
+    table_schema = {
+        "fields": [
             {'name': 'sensor_id', 'type': 'STRING', 'mode': 'NULLABLE'},
             {'name': 'equipment_id', 'type': 'STRING', 'mode': 'NULLABLE'},
             {'name': 'timestamp', 'type': 'STRING', 'mode': 'NULLABLE'},
             {'name': 'value', 'type': 'STRING', 'mode': 'NULLABLE'},
             {'name': 'unit', 'type': 'STRING', 'mode': 'NULLABLE'},
-            {'name': '_datetime_insert', 'type': 'TIMESTAMP', 'mode': 'NULLABLE'},
+            {"name": "_source_file", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "_source_storage", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "_datetime_insert", "type": "TIMESTAMP", "mode": "NULLABLE"},
         ]
     }
 
     pipeline_args = [
-        '--runner=DataflowRunner',
+        '--runner=DirectRunner',
         '--temp_location=gs://usina-energia-dados/temp',
         '--staging_location=gs://usina-energia-dados/staging',
-        '--region=us-central1',
-        '--worker_machine_type=e2-standard-2',
-        '--project=usina-energia',
-        '--streaming'
     ]
 
-    run_streaming_pipeline(
-        input_topic='projects/usina-energia/topics/telemetria-topic',
+    run(
+        input_file_pattern='gs://usina-energia-dados/usina-energia/telemetria/*.json',
         output_table='usina-energia:raw.telemetria',
-        table_schema=telemetry_schema,
+        table_schema=table_schema,
         pipeline_args=pipeline_args
     )
