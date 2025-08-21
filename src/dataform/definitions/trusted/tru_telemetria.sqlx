@@ -17,6 +17,8 @@ select
         when value is null or unit in ("N/A", "") then true
         else false
     end AS valor_invalido,
+    SAFE_CAST(_source_file as string)        AS arquivo_fonte,
+    SAFE_CAST(_source_storage as string)     AS local_fonte,
     SAFE_CAST(_datetime_insert AS TIMESTAMP) AS hora_registro_etl
 from
   ${ref("raw", "telemetria")}
