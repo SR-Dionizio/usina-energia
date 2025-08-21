@@ -86,7 +86,7 @@ Limpeza de registros inválidos, padronização de timestamp.
 
 3. REF (referência)
 
-ref_acompenhamento_telemetria.sqlx → Tabela de acompanhamento e referência de sensores.
+ref_resumo_telemetria.sqlx → Tabela de acompanhamento e referência de sensores.
 
 Possível uso: enriquecer dados de telemetria com descrições, limites de operação, unidades padrão.
 
