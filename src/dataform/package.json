@@ -1,0 +1,6 @@
+{
+  "name": "usina-energia-dataform",
+  "dependencies": {
+    "@dataform/core": "2.8.0"
+  }
+}
